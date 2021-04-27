@@ -1,0 +1,89 @@
+---
+title: "Task 5"
+author: "Galikeeva Anna"
+date: "05 10 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Вариант 6
+Анализ смертельных случаев в России из-за коронавируса
+
+Прочитаем данные и преобразуем их во временной ряд
+```{r}
+data <- read.csv("Dead.csv", header = TRUE)
+data <- ts(data$Dead,start= c(5, 1), frequency = 7)
+```
+
+Проверим ряд на стационарность
+```{r}
+plot(data ,type = "l", col = "blue",lwd = 2,main = "dead")
+library(tseries)
+adf.test(data)
+```
+
+По графику можно предположить стационарность. Но на всякий случай проверили через тест Дики-Фуллера. Результат тот же.
+
+Посторим acf и pacf
+```{r}
+acf(data,lwd = 5, col = "blue")
+pacf(data,lwd = 5, col = "blue")
+```
+
+По ним можно предположить сезонную модель авторегрессии: SARMA(1,0,0)(1,0,0)
+
+Используем метод Extended ACF
+```{r}
+library(TSA)
+eacf(data)
+```
+
+По построенной таблице предполагаем модель ARMA(1, 2)
+
+По критерию Акаике выберем лучшую модель
+```{r}
+model1 <- arima(data,order = c(1,0,0),seasonal = list(order= c(1,0,0),period = 7),method = "ML")
+model1$aic
+model2 <- arima(data,order = c(1,0,2),method = "ML")
+model2$aic
+```
+
+Тогда это оказывается SARMA(1,0,0)(1,0,0)
+
+Проведем анализ остатков от удаления модели
+```{r}
+res <- model1$residuals
+Box.test(res, lag = 7, type = "Ljung-Box", fitdf = 2)
+```
+
+p-value меньше 0.05, значит гипотеза о случайности остатков отвергается
+
+Проверим их автокоррелируемость
+```{r}
+acf(res)
+```
+
+График выходит за границы, но уже не так сильно как в ARMA(1, 2). Т.е. остатки автокоррелируемы.(Что-то модель не учитывает).
+Остатки в модели не распределены нормально.
+
+Построим прогноз и доверительный интервал для прогноза уровня 0.95 на 12 интервалов времени вперед.
+```{r}
+plot(model1, n.ahead=12, type='b', xlab='Time', col="blue", lty=3, lwd=1)
+abline(h=coef(model1)[names(coef(model1))=='intercept'])
+```
+
+
+Построим прогноз по модели Holta-Winters на 14 интервалов времени вперед.
+```{r}
+past <- window(data,end = c(24,6))
+future <- window(data,start = c(24,7))
+model <- HoltWinters(past,seasonal = "mult")
+pred <- predict(model,n.ahead =14)
+plot(model,predicted.values = pred,lwd=2)
+lines(future,col = "blue",lwd = 3)
+```
+
+ Получается медленный сезонный рост смертности.

@@ -1,0 +1,117 @@
+---
+title: "Task7_1"
+author: "Galikeeva Anna"
+date: "22 10 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Импорт данных в R
+```{r}
+Data <- read.csv("VAR6.csv",header=T)
+```
+
+Перехожу к доходностям. 
+```{r}
+ncol <- dim(Data)[2]
+nrow <- dim(Data)[1]
+rates <- Data[2:nrow,3:ncol] / Data [1:(nrow-1),3:ncol] - 1
+```
+
+Разделяем данные на тренировочную и тестовую часть и нормируем их
+```{r}
+d = sort(sample(nrow - 1, (nrow - 1)*.9))
+train <- rates[d,]
+train <- as.data.frame(train)
+test<-rates[-d,]
+train1<-data.frame(ROSNEFT=train$ROSNEFT/max(train$ROSNEFT),BRENT=train$BRENT/max(train$BRENT),
+                   RTS=train$RTS/max(train$RTS),USD_RUB=train$USD_RUB/max(train$USD_RUB))
+test1<-data.frame(BRENT=test$BRENT/max(test$BRENT),
+                   RTS=test$RTS/max(test$RTS),USD_RUB=test$USD_RUB/max(test$USD_RUB))
+```
+
+Подбираем для обучения лучшую нейронную сеть и предсказываем доходности
+```{r}
+library(neuralnet)
+library(Metrics)
+set.seed(20)
+net0 <- neuralnet(ROSNEFT~., data = train1, err.fct="sse", rep=2) 
+testres0 <- compute(net0,test1,rep = 2)
+cor(test$ROSNEFT, testres0$net.result[,1]*max(test$ROSNEFT))
+
+set.seed(20)
+net1 <- neuralnet(train1$ROSNEFT~., data = train1, hidden = 3, err.fct="sse",rep=2) 
+testres1 <- compute(net1,test1,rep = 2)
+cor(test$ROSNEFT, testres1$net.result[,1]*max(test$ROSNEFT))
+```
+
+Видим, что без скрытых слоев работает лучше. Вообще говоря, такой результат у меня получался при любом количестве скрытых слоев.
+
+Строим график оригинальной и предсказанной доходности для лучшей нейронной сети
+```{r}
+newdata <-cbind(testres0$net.result*max(test$ROSNEFT),test$ROSNEFT)
+matplot(tail(newdata,50),type = "b",pch=21,col = c("blue","magenta"),lty = c(1,1),lwd = 3)
+```
+
+Предсказываем доходности первой финансовой переменной с помощью метода random forest.
+```{r}
+library(randomForest)
+set.seed(1)
+rf_train <- randomForest(train1$ROSNEFT~.,ntree=500, data=train1,importance=TRUE)
+predicted  <- predict(rf_train,newdata = test1)
+cor(predicted,test$ROSNEFT)
+
+set.seed(1)
+rf_train <- randomForest(train1$ROSNEFT~.,ntree=300, data=train1,importance=TRUE)
+predicted  <- predict(rf_train,newdata = test1)
+cor(predicted,test$ROSNEFT)
+```
+
+Видим, что этот метод работает лучше на 300 деревьях. И лучшей нейронной сети.
+
+Строим график
+```{r}
+newdata <-cbind(predicted*max(test$ROSNEFT),test$ROSNEFT)
+matplot(tail(newdata,50),type = "b",pch=21,col = c("blue","magenta"),lty = c(1,1),lwd = 3)
+```
+
+Предсказываем доходности первой финансовой переменной с помощью метода простой множественной регресии.
+```{r}
+my.lm <- lm(train1$ROSNEFT~., data = train1)
+regr.res <- predict(my.lm,test1)
+cor(regr.res,test$ROSNEFT)
+```
+
+Видим, что результат близок к тому, что дала нейросеть
+
+Строим график
+```{r}
+newdata <-cbind(regr.res*max(test$ROSNEFT),test$ROSNEFT)
+matplot(tail(newdata,50),type = "b",pch=21,col = c("blue","magenta"),lty = c(1,1),lwd = 3)
+```
+
+Через предсказанные доходности возвращаемся к реальным ценам в каждом из случаев и вычисляем средний квадрат ошибки.
+
+Нейронная сеть:
+```{r}
+real <- ((test$ROSNEFT+ 1)*Data [-d,3:ncol])$ROSNEFT
+R0 <- (testres0$net.result[1:30]*max(test$ROSNEFT) + 1)*Data [-d,3:ncol]
+(rm0 <- rmse(real, R0$ROSNEFT))
+```
+
+RandomForest:
+```{r}
+Rf <- (predicted[1:30]*max(test$ROSNEFT) + 1)*Data [-d,3:ncol]
+(rmf <- rmse(real, Rf$ROSNEFT))
+```
+
+Множественная регрессия
+```{r}
+lm <- (regr.res[1:30]*max(test$ROSNEFT) + 1)*Data [-d,3:ncol]
+(lmm <- rmse(real, lm$ROSNEFT))
+```
+
+Лучшим вышел RandomForest.
