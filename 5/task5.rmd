@@ -1,0 +1,75 @@
+---
+title: "task5"
+author: "Vladislav Cherkasov"
+date: "20 04 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+  data <- read.csv('var_25_Task_5.rds',header = T)
+  head(data)
+  library(TSA)
+```
+```{r}
+x1 <- data[,1]
+matplot(x1,type='p',main='Series1',pch=21)
+```
+
+```{r}
+y = periodogram(x1,col = "blue",lwd = 2)
+abline(h=0)
+for(i in 1:100){
+  cat(y$freq[i],' ', y$spec[i], '\n')
+}
+```
+
+```{r}
+x2 <- data[,2]
+dx2 <-diff(x2)
+matplot(dx2,type='b',main='Diff. Series2',pch=21,col='purple')
+```
+
+```{r}
+y2 = periodogram(dx2,col = "blue",lwd = 2)
+abline(h=0)
+```
+
+```{r}
+k3<- kernel('daniell',c(7,7,7))
+sp3=spec(dx2,kernel=k3,log='no',sub='',xlab='Frequency',
+ylab='Smoothed Sample Spectral Density',col = "blue",lwd = 2)
+```
+```{r}
+  l <- Re(fft(log(abs(fft(dx2))), inverse = TRUE))
+  l[1]=0
+  barplot(l[1:100],col = "blue",main="Kepstr")
+  m = max(l)
+  i = 2
+  while (l[i-1] != m){
+    cat(i-1,l[i], "\n")
+    i <- i+1
+  }
+  
+```
+```{r}
+x3 <- data[,3]
+matplot(x3,type='b',main='Series3',pch=20,col='blue')
+```
+```{r}
+y3 = periodogram(x3,col = "blue",lwd = 2)
+abline(h=0)
+```
+
+```{r}
+sd(y3$spec)
+```
+
+```{r}
+ssp <- spec.pgram(x3,spans = c(7,7,7), detrend = FALSE, log = "no",fast = FALSE, pad = FALSE,taper = 0, plot = FALSE)
+sd(ssp$spec)
+plot(ssp$freq,ssp$spec,type = 'b',pch = 20,main = "Series3. Smoothed Periodogram",col='blue')
+```

@@ -1,0 +1,150 @@
+---
+title: "Task_2"
+author: "Galikeeva"
+date: "11 04 2020"
+output: html_document
+---
+1. Прочитать данные
+```{r}
+library(xts)
+rates <- read.csv("./rates_1.csv",header = TRUE )
+head(rates)
+```
+Взяты данные за 2020 год с сайта https://www.treasury.gov/resource-center/data-chart-center/interest-rates/Pages/TextView.aspx?data=yieldYear&year=2020
+
+2. Вывести график доходностей
+```{r}
+(ndays  <-  dim(rates)[1])
+(ncol  <-  dim(rates)[2])
+tr_dates <- as.Date(rates[,1],"%m/%d/%Y")
+rates.xts <- as.xts(rates[2:ncol], order.by = tr_dates)
+head(rates.xts)
+plot(rates.xts,type = 'b',pch =20,main = "US Treasury Rates")
+```
+
+3. Провести к доходностям метод главных компонент
+```{r}
+pca <- prcomp(rates.xts, scale = FALSE)
+summary(pca)
+```
+
+4. Построить график стандартных отклоненией
+```{r}
+mp <- barplot(pca$sdev,main = "Standard deviation explained by the principal components.", col = "blue")
+```
+
+5. Построить график важности каждой главной компоненты
+```{r}
+ss <- summary(pca)
+mp <- barplot(ss$importance[2,],main = "Importance of Factors.", col = "blue")
+```
+
+6. Построить график накопленной меры информативности
+7. Определить сколько главных факторов объясняют более 95% дисперсии
+```{r}
+his <- ss$importance[3,]
+l <- length(his)
+his[4:l]<- NA
+r <- as.matrix(cbind(ss$importance[3,],his))
+mp <- matplot(1:l,r,type = 'h',lty = 1, lwd = 10,main = "Cumulative proportion.", col = c("blue",'red')) # default
+abline(h = 0.95,col = 'black')
+```
+
+Все главные факторы подходят под критерий.
+
+8. Получить главные факторы Shift,Twist,ButterFly
+```{r}
+scores <- function(ldata,pca,number)
+{
+  cdata <- ldata
+  m <- dim(ldata)[2]
+  for (i in 1:m)
+    cdata[,i] <- ldata[,i] - pca$center[i]
+  loads <- pca$rotation[,1:number]
+  cdata <- as.matrix(cdata)
+  f <- cdata %*% loads
+  return (f)
+}
+
+number <- 3
+fscores <- scores(rates.xts,ss,number)
+(shift <- fscores[,1])
+(twist <- fscores[,2])
+(butterfly <- fscores[,3])
+```
+
+9. Построить графики нагрузок shift,twist,butterfly.
+```{r}
+matplot(cbind(ss$rotation[,1],ss$rotation[,2],ss$rotation[,3]),type = 'b',pch=21,lwd = 2,
+        col = c("blue","green","magenta"),main= "Shift,Twist,Butterfly",ylab = "loadings",xlab="maturity",lty=1 )
+legend("bottomleft",c("Shift","Twist","Butterfly"),lty=c(1,1,1),lwd = 2,col = c("blue","green","magenta"))
+```
+
+10. Построить графики факторов shift,twist,butterfly.
+```{r}
+matplot(fscores,type = 'l',lty = 1, col = 1:number,main = 'Factor Scores')
+legend('topleft',c('shift','twist','butterfly'),col = 1:number,lty = 1)
+abline(h=0)
+
+```
+
+11. Восстановить для последнего дня доходности по факторам и сравнить оригинальные и восстановленные доходности последнего дня.
+```{r}
+restoreData<- function(fscores,loadings,center)
+{
+  npca <- dim(fscores)[2]
+  myeigen <- t(loadings[,1:npca])
+  rest <- fscores %*%myeigen
+  m <- length(center)
+  if (m == dim(rest)[2])
+  {
+    for (i in 1:m)
+      rest[,i] <- rest[,i]+center[i]
+  }
+  return(rest)
+}
+
+lastdate <- rates[ndays,1]
+rest <- restoreData(fscores,ss$rotation,ss$center)
+ndays <- dim(fscores)[1]
+head(rest)
+r <- unlist(rates.xts[ndays,])
+r <- as.matrix(r,ncol = 1)
+r <- t(r)
+s <- as.matrix(rest[ndays,],ncol = 1)
+title <- paste('Restored rates.',' Date =',lastdate)
+matplot(cbind(s,r),type ='b',pch=21,lwd = 2,main = title,col = c('blue','green'),lty = 1)
+legend('topleft',c('original rates','restored'),lty=1,lwd=2,col=c('blue','green'))
+```
+
+12. Вычислить цену портфеля из облигаций в количестве (15,15,15,200,15,20,20,10,10,10,10,15) со сроками до окончания 1 Mo,2 Mo 3 Mo, 6 Mo, 1 Yr, 2 Yr ,3 Yr, 5 Yr, 7 Yr, 10 Yr, 20 Yr, 30 Yr, если каждая облигация имеет купон 3% и выплачивает купонный доход 2 раза в год для последнего дня заданного года по оригинальным рейтам и восстановленным по shift,twist,butterfly.
+```{r}
+library(FinAna)
+par <- 100
+m <- 2
+coupon <- 0.03
+tau <- c(1/12,1/6, 0.25, 0.5,1,2,3,5,7,10,20,30)
+N <- c(15,15,15,200,15,20,20,10,10,10,10,15)
+last_true <- 1:12
+last_res <- 1:12
+
+for (i in 1:12){
+  last_true[i] <- rates.xts[ndays,i]
+  last_res[i] <- rest[ndays,i]
+}
+P_or <- 0
+P_res <- 0
+for (i in 1:12){
+  P_or <-  P_or + N[i] * bond.price(par,coupon,tau[i], last_true[i],m)
+  P_res <-  P_res + N[i] * bond.price(par,coupon,tau[i],last_res[i],m)
+}
+P_or
+P_res
+```
+
+Получили близкие значения
+
+13. Вычислить изменение фактора Twist между 3/17/20 и 3/18/20, когда ФРС США понизил ставку из-за проблем в экономике в связи с падением цен на нефть и коронавирусом.
+```{r}
+(twist[["2020-03-18"]] - twist[["2020-03-17"]])
+```
